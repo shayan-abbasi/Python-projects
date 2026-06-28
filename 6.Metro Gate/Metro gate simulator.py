@@ -1,0 +1,183 @@
+import tkinter as tk
+from tkinter import messagebox
+
+class Card:
+    def __init__(self, card_id, balance):
+        self.card_id = card_id
+        self.balance = balance
+
+    def has_balance(self):
+        if self.balance >= 2.0:
+            return True
+        else:
+            return False
+
+    def deduct(self):
+        self.balance = self.balance - 2.0
+
+class Passenger:
+    def __init__(self, name, card):
+        self.name = name
+        self.card = card
+
+class Sensor:
+    def __init__(self):
+        self.card_detected = False
+
+    def detect(self):
+        self.card_detected = True
+
+    def reset(self):
+        self.card_detected = False
+
+class Motor:
+    def __init__(self):
+        self.is_open = False
+
+    def open(self):
+        self.is_open = True
+
+    def close(self):
+        self.is_open = False
+
+class Gate:
+    def __init__(self):
+        self.sensor = Sensor()
+        self.motor = Motor()
+
+    def enter(self, passenger):
+        self.sensor.detect()
+        if passenger.card.has_balance() == True:
+            passenger.card.deduct()
+            self.motor.open()
+            return True
+        else:
+            self.motor.close()
+            return False
+
+    def exit_passenger(self):
+        self.motor.open()
+
+    def close(self):
+        self.motor.close()
+        self.sensor.reset()
+
+    def is_open(self):
+        return self.motor.is_open
+
+class GUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Metro Gate Simulator")
+
+        self.gate = Gate()
+
+        self.card1 = Card("A", 10.0)
+        self.card2 = Card("B", 1.0)
+        self.card3 = Card("C", 20.0)
+
+        self.cards = {
+            "Card A - $10": self.card1,
+            "Card B - $15": self.card2,
+            "Card C - $20": self.card3,
+        }
+
+        self.build_ui()
+    def build_ui(self):
+        tk.Label(self.root, text="Metro Gate Simulator", font=("Arial", 16, "bold")).pack(pady=10)
+
+        self.canvas = tk.Canvas(self.root, width=200, height=120, bg="white")
+        self.canvas.pack(pady=5)
+        self.draw_gate(False)
+
+        self.status_label = tk.Label(self.root, text="Gate: CLOSED", font=("Arial", 12), fg="red")
+        self.status_label.pack()
+
+        tk.Label(self.root, text="Passenger Name:").pack()
+        self.name_entry = tk.Entry(self.root)
+        self.name_entry.insert(0, "Shayan Abbasi")
+        self.name_entry.pack()
+
+        tk.Label(self.root, text="Select Card:").pack()
+        self.selected_card = tk.StringVar()
+        self.selected_card.set("Card A - $10")
+        card_menu = tk.OptionMenu(self.root, self.selected_card, "Card A - $10", "Card B - $1 (low)", "Card C - $20")
+        card_menu.pack()
+
+        self.balance_label = tk.Label(self.root, text="", fg="blue")
+        self.balance_label.pack()
+        self.update_balance()
+
+        tk.Button(self.root, text="Enter", width=12, bg="lightblue", command=self.press_enter).pack(pady=4)
+        tk.Button(self.root, text="Exit", width=12, bg="lightgreen", command=self.press_exit).pack(pady=4)
+
+        tk.Label(self.root, text="Log:").pack()
+        self.log = tk.Text(self.root, height=7, width=38, state="disabled")
+        self.log.pack(pady=5)
+
+    def draw_gate(self, open_gate):
+        self.canvas.delete("all")
+        self.canvas.create_rectangle(30, 20, 50, 100, fill="gray")
+        self.canvas.create_rectangle(150, 20, 170, 100, fill="gray")
+
+        if open_gate == True:
+            self.canvas.create_rectangle(38, 22, 44, 55, fill="green")
+            self.canvas.create_text(100, 65, text="OPEN", fill="green", font=("Arial", 14, "bold"))
+        else:
+            self.canvas.create_rectangle(48, 57, 152, 63, fill="red")
+            self.canvas.create_text(100, 40, text="CLOSED", fill="red", font=("Arial", 14, "bold"))
+
+    def update_balance(self):
+        card_name = self.selected_card.get()
+        card = self.cards[card_name]
+        self.balance_label.config(text="Balance: $" + str(round(card.balance, 2)))
+
+    def get_passenger(self):
+        name = self.name_entry.get()
+        if name == "":
+            name = "Unknown"
+        card_name = self.selected_card.get()
+        card = self.cards[card_name]
+        p = Passenger(name, card)
+        return p
+
+    def add_log(self, message):
+        self.log.config(state="normal")
+        self.log.insert("end", message + "\n")
+        self.log.see("end")
+        self.log.config(state="disabled")
+
+    def open_gate_then_close(self):
+        self.draw_gate(True)
+        self.status_label.config(text="Gate: OPEN", fg="green")
+        self.root.after(2000, self.close_gate)
+
+    def close_gate(self):
+        self.gate.close()
+        self.draw_gate(False)
+        self.status_label.config(text="Gate: CLOSED", fg="red")
+
+    def press_enter(self):
+        passenger = self.get_passenger()
+        result = self.gate.enter(passenger)
+
+        if result == True:
+            msg = "[ENTER] " + passenger.name + " passed. Balance left: $" + str(round(passenger.card.balance, 2))
+            self.add_log(msg)
+            self.update_balance()
+            self.open_gate_then_close()
+        else:
+            msg = "[DENIED] " + passenger.name + " - Not enough balance!"
+            self.add_log(msg)
+            messagebox.showwarning("Denied", "Not enough balance on card!")
+
+    def press_exit(self):
+        passenger = self.get_passenger()
+        self.gate.exit_passenger()
+        msg = "[EXIT] " + passenger.name + " exited."
+        self.add_log(msg)
+        self.open_gate_then_close()
+
+root = tk.Tk()
+app = GUI(root)
+root.mainloop()
