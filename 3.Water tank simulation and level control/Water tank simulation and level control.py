@@ -1,0 +1,185 @@
+import tkinter as tk
+from tkinter import ttk
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+class Tank:
+    def __init__(self, max_level=100):
+        self.max = max_level
+        self.level = 20
+
+    def update(self, qin, dt):
+        qout = 0.05 * self.level
+        self.level = self.level + (qin - qout) * dt
+        if self.level < 0:
+            self.level = 0
+        if self.level > self.max:
+            self.level = self.max
+
+class Pump:
+    def __init__(self, max_flow=10):
+        self.max = max_flow
+        self.u = 0
+
+    def flow(self):
+        return self.u * self.max
+
+class Sensor:
+    def __init__(self, tank):
+        self.tank = tank
+
+    def read(self):
+        return self.tank.level
+
+class OnOffController:
+    def __init__(self, sp, h=2):
+        self.sp = sp
+        self.h = h
+        self.state = 0
+
+    def compute(self, y):
+        if y < self.sp - self.h:
+            self.state = 1
+        elif y > self.sp + self.h:
+            self.state = 0
+        return self.state
+
+class PIDController:
+    def __init__(self, sp, kp, ki, kd):
+        self.sp = sp
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.i = 0
+        self.prev = 0
+
+    def compute(self, y, dt):
+        e = self.sp - y
+        self.i += e * dt
+        d = (e - self.prev) / dt
+        self.prev = e
+        u = self.kp * e + self.ki * self.i + self.kd * d
+        if u < 0:
+            u = 0
+        if u > 1:
+            u = 1
+        return u
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Tank Level Control")
+
+        self.tank = Tank()
+        self.pump = Pump()
+        self.sensor = Sensor(self.tank)
+
+        self.running = False
+        self.dt = 0.1
+        self.t = 0
+        self.x = []
+        self.y = []
+
+        self.pid = None
+        self.on = None
+
+        left = tk.Frame(root)
+        left.pack(side="left", fill="y")
+
+        self.mode = tk.StringVar()
+        self.mode.set("PID")
+
+        ttk.Radiobutton(left, text="PID", variable=self.mode, value="PID").pack(anchor="w")
+        ttk.Radiobutton(left, text="On-Off", variable=self.mode, value="ON").pack(anchor="w")
+
+        self.sp = tk.DoubleVar(value=70)
+        tk.Scale(left, from_=0, to=100, variable=self.sp, label="Setpoint",
+                 orient="horizontal").pack(fill="x")
+
+        self.kp = tk.DoubleVar(value=0.08)
+        self.ki = tk.DoubleVar(value=0.01)
+        self.kd = tk.DoubleVar(value=0.02)
+
+        tk.Scale(left, from_=0, to=1, resolution=0.01, variable=self.kp,
+                 label="Kp", orient="horizontal").pack(fill="x")
+        tk.Scale(left, from_=0, to=0.1, resolution=0.001, variable=self.ki,
+                 label="Ki", orient="horizontal").pack(fill="x")
+        tk.Scale(left, from_=0, to=1, resolution=0.01, variable=self.kd,
+                 label="Kd", orient="horizontal").pack(fill="x")
+
+        tk.Button(left, text="Start", command=self.start).pack(fill="x")
+        tk.Button(left, text="Stop", command=self.stop).pack(fill="x")
+        tk.Button(left, text="Reset", command=self.reset).pack(fill="x")
+
+        self.canvas = tk.Canvas(root, width=160, height=320, bg="white")
+        self.canvas.pack(side="left")
+
+        fig = plt.Figure(figsize=(6,4))
+        self.ax = fig.add_subplot(111)
+        self.line, = self.ax.plot([], [])
+        self.ax.set_ylim(0,100)
+        self.ax.grid()
+
+        self.figcanvas = FigureCanvasTkAgg(fig, master=root)
+        self.figcanvas.get_tk_widget().pack(side="right")
+
+        self.loop()
+
+    def start(self):
+        self.running = True
+
+    def stop(self):
+        self.running = False
+
+    def reset(self):
+        self.tank = Tank()
+        self.pump = Pump()
+        self.sensor = Sensor(self.tank)
+        self.pid = None
+        self.on = None
+        self.t = 0
+        self.x = []
+        self.y = []
+
+    def loop(self):
+        if self.running:
+            level = self.sensor.read()
+
+            if self.mode.get() == "PID":
+                if self.pid is None:
+                    self.pid = PIDController(self.sp.get(), self.kp.get(), self.ki.get(), self.kd.get())
+                self.pid.sp = self.sp.get()
+                self.pid.kp = self.kp.get()
+                self.pid.ki = self.ki.get()
+                self.pid.kd = self.kd.get()
+                self.pump.u = self.pid.compute(level, self.dt)
+            else:
+                if self.on is None:
+                    self.on = OnOffController(self.sp.get())
+                self.on.sp = self.sp.get()
+                self.pump.u = self.on.compute(level)
+
+            self.tank.update(self.pump.flow(), self.dt)
+
+            self.t += self.dt
+            self.x.append(self.t)
+            self.y.append(self.tank.level)
+
+            self.line.set_data(self.x, self.y)
+            if self.t < 20:
+                self.ax.set_xlim(0,20)
+            else:
+                self.ax.set_xlim(0,self.t)
+            self.figcanvas.draw()
+
+            self.canvas.delete("all")
+            self.canvas.create_rectangle(50,20,110,280)
+            h = (self.tank.level/100)*260
+            self.canvas.create_rectangle(51,280-h,109,279,fill="deepskyblue")
+            self.canvas.create_text(80,300,text="Level: %.1f" % self.tank.level)
+
+        self.root.after(100, self.loop)
+
+root = tk.Tk()
+app = App(root)
+root.mainloop()
